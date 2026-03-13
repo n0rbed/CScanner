@@ -108,4 +108,4 @@ public:
     static string tokenTypeToString(TokenType type);
 };
 
-#endif // TOKEN_H
+#endif

@@ -42,13 +42,14 @@ void Scanner::initializeKeywords() {
     keywords["while"]    = KW_WHILE;
 }
 
-// ── Constructor / Destructor ──────────────────────────────────────────────
 Scanner::Scanner(const string& filename) : lineNumber(1), position(0) {
     sourceFile.open(filename);
     if (!sourceFile.is_open())
         throw runtime_error("Could not open file: " + filename);
 
     initializeKeywords();
+
+    // read entire file into sourceString for easier scanning
     sourceString.assign((istreambuf_iterator<char>(sourceFile)),
                          istreambuf_iterator<char>());
     sourceFile.close();
@@ -59,7 +60,8 @@ Scanner::~Scanner() {
         sourceFile.close();
 }
 
-// ── Low-level helpers ─────────────────────────────────────────────────────
+
+// Helpers
 char Scanner::getChar() {
     if (position < (int)sourceString.size())
         return sourceString[position];
@@ -85,19 +87,20 @@ void Scanner::advance() {
     }
 }
 
-// ── Whitespace / comments ─────────────────────────────────────────────────
 void Scanner::skipWhitespace() {
     while (isspace((unsigned char)getChar()))
         advance();
 }
 
-// Handles  // ... \n
+// Handles  // ... \n - You should only call this if you already know
+// the current char is '/' and next char is '/'
 void Scanner::skipLineComment() {
     while (getChar() != '\n' && getChar() != (char)EOF)
         advance();
 }
 
 // Handles  /* ... */
+// Call condition same as above
 void Scanner::skipBlockComment() {
     advance(); advance();   // consume '/' and '*'
     while (getChar() != (char)EOF) {
@@ -111,7 +114,30 @@ void Scanner::skipBlockComment() {
                         to_string(lineNumber));
 }
 
-// ── scanNumber ────────────────────────────────────────────────────────────
+// This loop occurs in scanNumber a lot, so we factor it out.
+string Scanner::getDigitSerial(string num) {
+    while (isdigit((unsigned char)getChar())) {
+        num += getChar();
+        advance();
+    }
+    return num;
+}
+
+// Handles integer suffixes: u, l, ul, ull, etc.
+string Scanner::getIntegerSuffix(string num) {
+    for (int i = 0; i < 2; i++) {
+        if (getChar() == 'u' || getChar() == 'U' ||
+            getChar() == 'l' || getChar() == 'L') {
+            num += getChar();
+            advance();
+        }
+        else {
+            break;
+        }
+    }
+    return num;
+}
+
 // Handles:  decimal (42), hex (0xFF), octal (0755), float (3.14, 1.0e-5f)
 Token Scanner::scanNumber() {
     string num;
@@ -126,28 +152,18 @@ Token Scanner::scanNumber() {
             advance();
         }
         // optional suffix: u, l, ul, etc.
-        while (getChar() == 'u' || getChar() == 'U' ||
-               getChar() == 'l' || getChar() == 'L') {
-            num += getChar();
-            advance();
-        }
+        num = getIntegerSuffix(num);
         return Token(LIT_INT, num, lineNumber);
     }
 
     // Decimal / octal / float
-    while (isdigit((unsigned char)getChar())) {
-        num += getChar();
-        advance();
-    }
+    num = getDigitSerial(num);
 
-    // Fractional part
+    // Fractional part e.g. 153.21 (153 is captured by the loop above)
     if (getChar() == '.' && isdigit((unsigned char)peekChar())) {
         isFloat = true;
         num += getChar(); advance();   // '.'
-        while (isdigit((unsigned char)getChar())) {
-            num += getChar();
-            advance();
-        }
+        num = getDigitSerial(num);
     }
 
     // Exponent part: e/E followed by optional +/- and digits
@@ -157,10 +173,7 @@ Token Scanner::scanNumber() {
         if (getChar() == '+' || getChar() == '-') {
             num += getChar(); advance();
         }
-        while (isdigit((unsigned char)getChar())) {
-            num += getChar();
-            advance();
-        }
+        num = getDigitSerial(num);
     }
 
     // Float suffix: f / F / l / L
@@ -172,17 +185,12 @@ Token Scanner::scanNumber() {
 
     // Integer suffixes: u, l, ul, ull, etc.
     if (!isFloat) {
-        while (getChar() == 'u' || getChar() == 'U' ||
-               getChar() == 'l' || getChar() == 'L') {
-            num += getChar();
-            advance();
-        }
+        num = getIntegerSuffix(num);
     }
 
     return Token(isFloat ? LIT_FLOAT : LIT_INT, num, lineNumber);
 }
 
-// ── scanIdentifierOrKeyword ───────────────────────────────────────────────
 // Identifiers start with a letter or '_', followed by letters, digits, '_'
 Token Scanner::scanIdentifierOrKeyword() {
     string id;
@@ -196,8 +204,7 @@ Token Scanner::scanIdentifierOrKeyword() {
     return Token(IDENTIFIER, id, lineNumber);
 }
 
-// ── scanStringLiteral ─────────────────────────────────────────────────────
-// Captures the entire  "..."  including escape sequences
+// Captures strings like "..." including escape sequences
 Token Scanner::scanStringLiteral() {
     string str;
     str += getChar(); advance();   // opening '"'
@@ -223,7 +230,6 @@ Token Scanner::scanStringLiteral() {
     return Token(LIT_STRING, str, lineNumber);
 }
 
-// ── scanCharLiteral ───────────────────────────────────────────────────────
 Token Scanner::scanCharLiteral() {
     string ch;
     ch += getChar(); advance();   // opening '\''
@@ -249,7 +255,7 @@ Token Scanner::scanCharLiteral() {
     return Token(LIT_CHAR, ch, lineNumber);
 }
 
-// ── scanPreprocessorDirective ─────────────────────────────────────────────
+// preprocessor directives are: #include, #define, etc. 
 // Reads from '#' to the end of the logical line (handles \ continuations)
 Token Scanner::scanPreprocessorDirective() {
     string directive;
@@ -265,7 +271,6 @@ Token Scanner::scanPreprocessorDirective() {
     return Token(PP_DIRECTIVE, directive, lineNumber);
 }
 
-// ── scanOperatorOrDelimiter ───────────────────────────────────────────────
 // Uses a greedy longest-match strategy with peekChar() / peekAhead()
 Token Scanner::scanOperatorOrDelimiter() {
     char c  = getChar();

@@ -27,7 +27,10 @@ private:
     void  skipLineComment();       // //
     void  skipBlockComment();      // /* */
 
+    string getDigitSerial(string num); 
+    string getIntegerSuffix(string num);  
     Token scanNumber();
+
     Token scanIdentifierOrKeyword();
     Token scanStringLiteral();
     Token scanCharLiteral();
