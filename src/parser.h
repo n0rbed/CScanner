@@ -8,6 +8,18 @@
 #include <unordered_set>
 using namespace std;
 
+// ── Free utility ─────────────────────────────────────────────────────────────
+// Prints every node in the tree exactly as the parser built it — one line per
+// grammar rule, including pure wrapper nodes such as BlockItemList, BlockItem,
+// InitDeclaratorList, PrimaryExpression, etc.  This is the concrete parse tree,
+// not the simplified AST (use printAST from ast.h for the latter).
+void printParseTree(const shared_ptr<ASTNode>& node, int depth = 0);
+
+struct ParseError {
+    int    line;
+    string message;
+};
+
 // ============================================================
 //  Parser — top-down recursive-descent parser for ISO C (C11).
 //
@@ -23,12 +35,17 @@ using namespace std;
 class Parser {
 public:
     explicit Parser(const vector<Token>& tokens);
-    shared_ptr<ASTNode> parse();   // entry point → TranslationUnit
+    shared_ptr<ASTNode>          parse();            // entry point → TranslationUnit
+    const vector<ParseError>&    getParseErrors() const;
 
 private:
     // ── Token stream state ────────────────────────────────
-    vector<Token> tokens_;
-    int           pos_;
+    vector<Token>      tokens_;
+    int                pos_;
+
+    // ── Error collection ──────────────────────────────────
+    vector<ParseError> parseErrors_;
+    void               synchronize();
 
     // ── Typedef name table ────────────────────────────────
     // Populated as typedef declarations are parsed.

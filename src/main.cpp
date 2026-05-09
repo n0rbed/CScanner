@@ -10,32 +10,47 @@ int main(int argc, char* argv[]) {
         cerr << "Example: " << argv[0] << " D:\\yassin\\test.c\n";
         return 1;
     }
-
     const string sourceFile = argv[1];
 
     // ── 1. Lex ───────────────────────────────────────────────
     cout << "=== Lexing: " << sourceFile << " ===\n";
     Lexical lexical(sourceFile);
     lexical.Run();
-
     vector<Token> tokens = lexical.getScanner().getTokens();
     cout << "Tokens produced: " << tokens.size() << "\n\n";
 
     // ── 2. Parse ─────────────────────────────────────────────
     cout << "=== Parsing ===\n";
+    Parser parser(tokens);
     shared_ptr<ASTNode> ast;
     try {
-        Parser parser(tokens);
         ast = parser.parse();
-        cout << "Parse successful.\n\n";
     } catch (const exception& e) {
-        cerr << "Parse error: " << e.what() << "\n";
+        cerr << "Fatal error: " << e.what() << "\n";
         return 1;
     }
 
-    // ── 3. Print AST ─────────────────────────────────────────
-    cout << "=== AST ===\n";
-    printAST(ast);
+    // ── 3. Report errors ─────────────────────────────────────
+    for (const auto& err : lexical.getScanner().getLexErrors())
+        cerr << "Lexical error: line " << err.line << ", col " << err.col
+             << ": " << err.message << "\n";
+    for (const auto& err : parser.getParseErrors())
+        cerr << "Syntax error: line " << err.line << ": " << err.message << "\n";
+    bool anyErrors = !lexical.getScanner().getLexErrors().empty() ||
+                     !parser.getParseErrors().empty();
+    cout << (anyErrors ? "Compilation failed.\n\n" : "No errors.\n\n");
 
-    return 0;
+    if (!anyErrors)
+    {
+        // ── 4. Print parse tree ───────────────────────────────────
+        cout << "=== Parse Tree ===\n";
+        if (ast) printParseTree(ast);
+        cout << "\n";
+
+        // ── 5. Print AST ─────────────────────────────────────────
+        cout << "=== AST ===\n";
+        if (ast) printAST(ast);
+    }
+
+    return anyErrors ? 1 : 0;
 }

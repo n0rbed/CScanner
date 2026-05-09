@@ -120,6 +120,7 @@ string Token::tokenTypeToString(TokenType type) {
     // Other
     case IDENTIFIER: return "identifier";
     case UNKNOWN:    return "unknown";
+    case EOF_TOK:    return "EOF";
     default:         return "UNKNOWN_TOKEN_TYPE";
     }
 }

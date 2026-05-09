@@ -45,9 +45,3 @@ Lexical::~Lexical(){
 SymbolTable Lexical::getSymbolTable() const{
     return symTable;
 }
-
-
-
-
-
-

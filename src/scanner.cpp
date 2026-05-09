@@ -42,7 +42,7 @@ void Scanner::initializeKeywords() {
     keywords["while"]    = KW_WHILE;
 }
 
-Scanner::Scanner(const string& filename) : lineNumber(1), position(0) {
+Scanner::Scanner(const string& filename) : lineNumber(1), column_(1), position(0) {
     sourceFile.open(filename);
     if (!sourceFile.is_open())
         throw runtime_error("Could not open file: " + filename);
@@ -86,8 +86,12 @@ char Scanner::peekAhead(int offset) {
 
 void Scanner::advance() {
     if (position < (int)sourceString.size()) {
-        if (sourceString[position] == '\n')
+        if (sourceString[position] == '\n') {
             lineNumber++;
+            column_ = 1;
+        } else {
+            column_++;
+        }
         position++;
     }
 }
@@ -107,6 +111,7 @@ void Scanner::skipLineComment() {
 // Handles  /* ... */
 // Call condition same as above
 void Scanner::skipBlockComment() {
+    int errLine = lineNumber, errCol = column_;
     advance(); advance();   // consume '/' and '*'
     while (getChar() != (char)EOF) {
         if (getChar() == '*' && peekChar() == '/') {
@@ -115,8 +120,7 @@ void Scanner::skipBlockComment() {
         }
         advance();
     }
-    throw runtime_error("Unterminated block comment starting near line " +
-                        to_string(lineNumber));
+    lexErrors_.push_back({errLine, errCol, "unterminated block comment"});
 }
 
 // This loop occurs in scanNumber a lot, so we factor it out.
@@ -211,6 +215,7 @@ Token Scanner::scanIdentifierOrKeyword() {
 
 // Captures strings like "..." including escape sequences
 Token Scanner::scanStringLiteral() {
+    int errLine = lineNumber, errCol = column_;
     string str;
     str += getChar(); advance();   // opening '"'
 
@@ -228,14 +233,15 @@ Token Scanner::scanStringLiteral() {
     if (getChar() == '"') {
         str += getChar(); advance();   // closing '"'
     } else {
-        throw runtime_error("Unterminated string literal at line " +
-                            to_string(lineNumber));
+        lexErrors_.push_back({errLine, errCol, "unterminated string literal"});
+        return Token(UNKNOWN, str, errLine);
     }
 
-    return Token(LIT_STRING, str, lineNumber);
+    return Token(LIT_STRING, str, errLine);
 }
 
 Token Scanner::scanCharLiteral() {
+    int errLine = lineNumber, errCol = column_;
     string ch;
     ch += getChar(); advance();   // opening '\''
 
@@ -253,11 +259,11 @@ Token Scanner::scanCharLiteral() {
     if (getChar() == '\'') {
         ch += getChar(); advance();   // closing '\''
     } else {
-        throw runtime_error("Unterminated char literal at line " +
-                            to_string(lineNumber));
+        lexErrors_.push_back({errLine, errCol, "unterminated char literal"});
+        return Token(UNKNOWN, ch, errLine);
     }
 
-    return Token(LIT_CHAR, ch, lineNumber);
+    return Token(LIT_CHAR, ch, errLine);
 }
 
 // preprocessor directives are: #include, #define, etc.
@@ -365,9 +371,13 @@ Token Scanner::scanOperatorOrDelimiter() {
     case ':': return make(1, DELIM_COLON,     ":");
     case '?': return make(1, DELIM_QUESTION,  "?");
 
-    default:
+    default: {
+        int errCol = column_;
+        lexErrors_.push_back({lineNumber, errCol,
+                              string("unexpected character '") + c + "'"});
         advance();
         return Token(UNKNOWN, string(1, c), lineNumber);
+    }
     }
 }
 
@@ -425,10 +435,15 @@ vector<Token> Scanner::getTokens() {
         }
 
         else {
-            throw runtime_error(string("Unexpected character: '") + c +
-                                "' at line " + to_string(lineNumber));
+            lexErrors_.push_back({lineNumber, column_,
+                                  string("unexpected character '") + c + "'"});
+            advance();
         }
     }
-    tokens.push_back(Token(EOF_TOK, "", 0));
+    tokens.push_back(Token(EOF_TOK, "", lineNumber));
     return tokens;
+}
+
+const vector<LexError>& Scanner::getLexErrors() const {
+    return lexErrors_;
 }

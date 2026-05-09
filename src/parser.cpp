@@ -15,6 +15,31 @@
 #include <iostream>
 
 // ============================================================
+// printParseTree — verbatim concrete parse tree dump.
+//
+// Prints every node exactly as the parser constructed it,
+// including all grammar-artifact wrappers (BlockItemList,
+// BlockItem, InitDeclaratorList, PrimaryExpression, …).
+// For the simplified AST view use printAST() from ast.h/cpp.
+// ============================================================
+void printParseTree(const shared_ptr<ASTNode>& node, int depth) {
+    if (!node) return;
+
+    string indent(depth * 2, ' ');
+    string branch = depth > 0 ? "- " : "";
+
+    cout << indent << branch << nodeKindToString(node->kind);
+    if (!node->value.empty())
+        cout << "  \"" << node->value << "\"";
+    if (node->line > 0)
+        cout << "  (line " << node->line << ")";
+    cout << "\n";
+
+    for (const auto& child : node->children)
+        printParseTree(child, depth + 1);
+}
+
+// ============================================================
 // §0  Infrastructure
 // ============================================================
 
@@ -56,6 +81,28 @@ Token Parser::consume(TokenType t, const string& msg) {
 }
 
 bool Parser::isAtEnd() const { return match(EOF_TOK); }
+
+void Parser::synchronize() {
+    while (!isAtEnd()) {
+        if (match(DELIM_SEMICOLON)) { advance(); return; }
+        if (match(DELIM_RBRACE))    { return; }
+        switch (currentToken().getType()) {
+            case KW_IF:    case KW_WHILE:   case KW_FOR:      case KW_DO:
+            case KW_RETURN: case KW_BREAK:  case KW_CONTINUE: case KW_GOTO:
+            case KW_INT:   case KW_FLOAT:   case KW_DOUBLE:   case KW_CHAR:
+            case KW_VOID:  case KW_LONG:    case KW_SHORT:    case KW_STRUCT:
+            case KW_UNION: case KW_ENUM:    case KW_TYPEDEF:
+            case KW_STATIC: case KW_EXTERN: case KW_CONST:    case KW_INLINE:
+                return;
+            default:
+                advance();
+        }
+    }
+}
+
+const vector<ParseError>& Parser::getParseErrors() const {
+    return parseErrors_;
+}
 
 // ── AST factory ─────────────────────────────────────────────
 
@@ -203,8 +250,14 @@ void Parser::registerTypedefName(const shared_ptr<ASTNode>& n) {
 
 shared_ptr<ASTNode> Parser::parseTranslationUnit() {
     auto root = node(NodeKind::TranslationUnit);
-    while (!isAtEnd())
-        root->addChild(parseExternalDeclaration());
+    while (!isAtEnd()) {
+        try {
+            root->addChild(parseExternalDeclaration());
+        } catch (const runtime_error& e) {
+            parseErrors_.push_back({currentToken().getLine(), e.what()});
+            synchronize();
+        }
+    }
     return root;
 }
 
@@ -990,8 +1043,14 @@ shared_ptr<ASTNode> Parser::parseCompoundStatement() {
 // block-item-list: block-item+
 shared_ptr<ASTNode> Parser::parseBlockItemList() {
     auto list = node(NodeKind::BlockItemList);
-    while (!match(DELIM_RBRACE) && !isAtEnd())
-        list->addChild(parseBlockItem());
+    while (!match(DELIM_RBRACE) && !isAtEnd()) {
+        try {
+            list->addChild(parseBlockItem());
+        } catch (const runtime_error& e) {
+            parseErrors_.push_back({currentToken().getLine(), e.what()});
+            synchronize();
+        }
+    }
     return list;
 }
 

@@ -72,9 +72,63 @@ string nodeKindToString(NodeKind k) {
     }
 }
 
+// ── AST collapsing helpers ───────────────────────────────────────────────────
+
+// Nodes that are completely transparent: they are skipped entirely and their
+// children are printed at the *same* depth as the node itself would have been.
+// These are pure grammar list/wrapper rules with no semantic content of their
+// own (the wrapper adds nothing that isn't already conveyed by context).
+static bool isTransparent(NodeKind k) {
+    switch (k) {
+        case NodeKind::BlockItemList:       // grammar list — children are the items
+        case NodeKind::BlockItem:           // always exactly one child
+        case NodeKind::PrimaryExpression:   // always exactly one child (the real expr)
+        case NodeKind::ExpressionStatement: // the ';' is implicit; child is the expr
+            return true;
+        default:
+            return false;
+    }
+}
+
+// Nodes that act as single-child pass-throughs: when they have exactly one
+// child they add no information, so we skip straight to the child.  When they
+// have multiple children they ARE meaningful and are kept.
+static bool collapseWhenSingle(NodeKind k) {
+    switch (k) {
+        case NodeKind::DeclarationSpecifiers: // e.g. just "int" — skip the wrapper
+        case NodeKind::InitDeclaratorList:    // comma list; single item adds nothing
+        case NodeKind::InitDeclarator:        // declarator with no initializer
+        case NodeKind::Declarator:            // pointer-less declarator
+        case NodeKind::Initializer:           // scalar initializer
+            return true;
+        default:
+            return false;
+    }
+}
+
+// ── printAST ─────────────────────────────────────────────────────────────────
+// Prints a simplified AST by eliding pure grammar-artifact nodes.
+// Compare with printParseTree (in parser.cpp) which dumps every node verbatim.
+
 void printAST(const shared_ptr<ASTNode>& node, int depth) {
     if (!node) return;
 
+    // 1. Completely transparent nodes: skip the node, recurse into children at
+    //    the *same* depth so they appear at the parent's indentation level.
+    if (isTransparent(node->kind)) {
+        for (const auto& child : node->children)
+            printAST(child, depth);
+        return;
+    }
+
+    // 2. Single-child pass-through nodes: skip the wrapper and go straight to
+    //    the child (avoids chains like Declarator → Identifier "x").
+    if (collapseWhenSingle(node->kind) && node->children.size() == 1) {
+        printAST(node->children[0], depth);
+        return;
+    }
+
+    // 3. Everything else: print this node, then recurse into its children.
     string indent(depth * 2, ' ');
     string branch = depth > 0 ? "- " : "";
 

@@ -8,13 +8,21 @@
 #include <fstream>
 using namespace std;
 
+struct LexError {
+    int    line;
+    int    col;
+    string message;
+};
+
 class Scanner {
 private:
-    ifstream      sourceFile;
-    string        sourceString;
-    int           lineNumber;
-    int           position;
-    vector<Token> tokens;
+    ifstream         sourceFile;
+    string           sourceString;
+    int              lineNumber;
+    int              column_;
+    int              position;
+    vector<Token>    tokens;
+    vector<LexError> lexErrors_;
     map<string, TokenType> keywords;
 
     void  initializeKeywords();
@@ -40,8 +48,9 @@ private:
 public:
     Scanner(const string& filename);
     ~Scanner();
-    vector<Token> getTokens();
-    string getSourceString() const;
+    vector<Token>            getTokens();
+    string                   getSourceString() const;
+    const vector<LexError>&  getLexErrors()    const;
 };
 
 #endif // SCANNER_H
